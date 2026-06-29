@@ -1,0 +1,38 @@
+# Python 바이트코드 및 캐시
+__pycache__/
+*.py[cod]
+*$py.class
+
+# 가상 환경
+.venv/
+venv/
+env/
+
+# 빌드 및 배포 결과물
+build/
+dist/
+*.egg-info/
+
+# 테스트 및 분석 도구 캐시
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# IDE 및 운영체제 파일
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# 환경 변수와 로컬 설정
+.env
+.env.*
+
+# 실행 중 생성되는 참가자 데이터
+data/*
+!data/.gitkeep
+
+# 로그
+*.log
