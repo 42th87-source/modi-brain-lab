@@ -193,6 +193,27 @@ class DataManager:
         ]
         return leaderboard if limit is None else leaderboard[:limit]
 
+    def get_group_analysis(self) -> dict[str, Any]:
+        """완료된 전체 세션의 인지과학 조건 효과와 점수 통계를 반환한다."""
+
+        from analysis.statistics import describe_scores, summarize_effects
+
+        reports: list[dict[str, Any]] = []
+        for path in sorted(self.sessions_dir.glob("*.json")):
+            try:
+                session = ParticipantSession.from_mapping(json.loads(path.read_text(encoding="utf-8")))
+            except (OSError, ValueError, KeyError, json.JSONDecodeError):
+                continue
+            if session.task_results:
+                reports.append(self.build_participant_report(session.session_id))
+
+        frame = describe_scores_from_rows(self.load_participant_rows(), describe_scores)
+        return {
+            "participant_count": len(reports),
+            "effects": summarize_effects(reports),
+            "score_summary": frame,
+        }
+
     def refresh_rankings(self) -> None:
         """현재 점수를 기준으로 참가자 CSV와 세션 JSON의 순위를 갱신한다."""
 
@@ -333,3 +354,20 @@ def create_participant_session(participant_id: str) -> dict[str, Any]:
     """기본 저장소에 새 참가자 세션을 만든다."""
 
     return get_data_manager().create_participant_session(participant_id)
+
+
+def describe_scores_from_rows(rows: list[dict[str, Any]], describe_function) -> dict[str, Any]:
+    """CSV 행을 점수 요약 딕셔너리로 변환한다."""
+
+    import pandas as pd
+
+    description = describe_function(pd.DataFrame(rows))
+    if description.empty:
+        return {}
+    return {
+        index: {
+            key: (None if pd.isna(value) else float(value))
+            for key, value in values.items()
+        }
+        for index, values in description.to_dict(orient="index").items()
+    }

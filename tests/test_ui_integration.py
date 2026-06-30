@@ -37,6 +37,8 @@ class DashboardIntegrationTests(unittest.TestCase):
         self.assertEqual(self.app.current_screen.name, "final_result")
         self.assertEqual(report["participant_id"], "주혁테스트")
         self.assertEqual(report["rank"], 1)
+        self.app.show_screen("analysis")
+        self.assertEqual(self.app.current_screen.name, "analysis")
         self.assertEqual(len(self.app.get_top_rankings()), 1)
 
     def test_duplicate_id_is_rejected(self) -> None:

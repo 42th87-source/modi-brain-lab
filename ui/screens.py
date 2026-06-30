@@ -267,6 +267,7 @@ class FinalResultScreen(BaseScreen):
         self.report: dict[str, Any] = {}
         self.buttons = [
             Button((70, WINDOW_HEIGHT - 95, 190, 56), "처음으로", app.restart, primary=False),
+            Button((WINDOW_WIDTH // 2 - 115, WINDOW_HEIGHT - 95, 230, 56), "집단 분석", lambda: app.show_screen("analysis"), primary=False),
             Button((WINDOW_WIDTH - 280, WINDOW_HEIGHT - 95, 210, 56), "순위 보기", lambda: app.show_screen("ranking")),
         ]
 
@@ -319,6 +320,83 @@ class RankingScreen(BaseScreen):
         self.draw_buttons(surface)
 
 
+class AnalysisScreen(BaseScreen):
+    name = "analysis"
+
+    EFFECTS = (
+        (
+            "input_mode_difference_ms",
+            "입력 방식 반응 차이",
+            "ms",
+            "양수이면 자이로 동작 시작이 버튼 반응보다 느렸음을 뜻합니다.",
+        ),
+        (
+            "sensory_integration_effect",
+            "감각 통합 기억 변화",
+            "%p",
+            "양수이면 시청각 조건의 기억 정확도가 시각 단독보다 높았습니다.",
+        ),
+        (
+            "auditory_interference_rate",
+            "청각 방해 반응률",
+            "%",
+            "소리만 제시됐을 때 잘못 버튼을 누른 비율입니다.",
+        ),
+        (
+            "cursor_dual_task_cost",
+            "이중 과제 커서 비용",
+            "%p",
+            "양수이면 두 과제를 함께 할 때 목표 유지율이 감소했습니다.",
+        ),
+        (
+            "rhythm_dual_task_cost_ms",
+            "이중 과제 리듬 비용",
+            "ms",
+            "양수이면 두 과제를 함께 할 때 비트 오차가 증가했습니다.",
+        ),
+    )
+
+    def __init__(self, app: "App") -> None:
+        super().__init__(app)
+        self.analysis: dict[str, Any] = {}
+        self.buttons = [
+            Button((70, WINDOW_HEIGHT - 78, 180, 48), "처음으로", app.restart, primary=False),
+            Button((WINDOW_WIDTH - 260, WINDOW_HEIGHT - 78, 190, 48), "결과로", lambda: app.show_screen("final_result"), primary=False),
+        ]
+
+    def on_show(self, **kwargs: Any) -> None:
+        super().on_show(**kwargs)
+        self.analysis = self.app.get_group_analysis()
+
+    def draw(self, surface: pygame.Surface) -> None:
+        super().draw(surface)
+        count = self.analysis.get("participant_count", 0)
+        self.draw_header(surface, "인지과학 효과 분석", f"현재 저장된 참가자 {count}명의 탐색적 결과")
+        effects = self.analysis.get("effects") or {}
+        y = 145
+        for key, title, unit, explanation in self.EFFECTS:
+            summary = effects.get(key) or {}
+            value = summary.get("mean")
+            sample_count = summary.get("count", 0)
+            panel = pygame.Rect(70, y, WINDOW_WIDTH - 140, 82)
+            pygame.draw.rect(surface, COLORS["panel"], panel, border_radius=12)
+            draw_text(surface, title, (panel.x + 20, panel.y + 13), size=20, bold=True)
+            shown = f"{value:+.1f}{unit}" if value is not None else "자료 없음"
+            draw_text(surface, shown, (panel.right - 180, panel.y + 12), size=22, bold=True, color=COLORS["primary"])
+            draw_text(surface, explanation, (panel.x + 20, panel.y + 48), size=15, color=COLORS["muted"])
+            draw_text(surface, f"n={sample_count}", (panel.right - 70, panel.y + 52), size=14, color=COLORS["muted"])
+            y += 91
+        draw_text(
+            surface,
+            "참가자가 적을 때는 결론이 아닌 예비 경향으로만 해석하세요.",
+            (WINDOW_WIDTH // 2, 625),
+            size=17,
+            color=COLORS["error"],
+            center=True,
+        )
+        self.draw_buttons(surface)
+
+
 SCREEN_TYPES = (
     StartScreen,
     OverviewScreen,
@@ -327,4 +405,5 @@ SCREEN_TYPES = (
     InterimResultScreen,
     FinalResultScreen,
     RankingScreen,
+    AnalysisScreen,
 )

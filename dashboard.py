@@ -135,6 +135,11 @@ class App:
 
         return self.data_manager.get_leaderboard(limit=10)
 
+    def get_group_analysis(self) -> dict[str, Any]:
+        """인지과학 효과 분석 화면에 표시할 전체 집단 요약을 반환한다."""
+
+        return self.data_manager.get_group_analysis()
+
     def _get_task_runner(self, task_number: int) -> TaskRunner:
         if task_number in self.task_runners:
             return self.task_runners[task_number]

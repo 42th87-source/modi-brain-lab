@@ -83,6 +83,9 @@ class DataManagerTests(unittest.TestCase):
             self.assertEqual(report["participant_count"], 1)
             self.assertFalse(manager.is_participant_id_available("참가자01"))
             self.assertEqual(manager.get_leaderboard()[0]["participant_id"], "참가자01")
+            analysis = manager.get_group_analysis()
+            self.assertEqual(analysis["participant_count"], 1)
+            self.assertIn("sensory_integration_effect", analysis["effects"])
 
     def test_invalid_ids_are_rejected(self) -> None:
         with TemporaryDirectory() as directory:
