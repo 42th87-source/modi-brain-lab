@@ -141,6 +141,8 @@ class App:
         candidates = {
             1: ("tasks.task1_reaction", ("run_task1", "run_task")),
             2: ("tasks.task2_memory", ("run_task2", "run_task")),
+            3: ("tasks.task3_attention", ("run_task3", "run_task")),
+            4: ("tasks.task4_coordination", ("run_task4", "run_task")),
         }
         if task_number not in candidates:
             raise ValueError(f"아직 지원하지 않는 TASK입니다: {task_number}")
@@ -177,7 +179,37 @@ class App:
                 "trials": [],
             }
 
-        return task1 if task_number == 1 else task2
+        def task3(_participant_id: str) -> dict[str, Any]:
+            trials = []
+            for index, condition in enumerate(
+                ("congruent", "visual_only", "audio_only", "none") * 2,
+                start=1,
+            ):
+                has_light = condition in {"congruent", "visual_only"}
+                trials.append(
+                    {
+                        "trial_index": index,
+                        "stimulus_condition": condition,
+                        "reaction_time_ms": 320 if has_light else None,
+                        "hit": has_light,
+                        "miss": False,
+                        "false_alarm": False,
+                        "correct_rejection": not has_light,
+                    }
+                )
+            return {"task_id": "task3", "score": None, "metrics": {}, "trials": trials}
+
+        def task4(_participant_id: str) -> dict[str, Any]:
+            trials = []
+            for index in range(30):
+                trials.append({"phase": "cursor_baseline", "sample_time": index / 30, "inside_target": True})
+                trials.append({"phase": "dual_task", "sample_time": index / 30, "inside_target": index % 5 != 0})
+            for phase in ("rhythm_baseline", "dual_task"):
+                for index in range(8):
+                    trials.append({"phase": phase, "beat_index": index + 1, "beat_error_ms": 80, "missed_beat": False, "extra_press": False})
+            return {"task_id": "task4", "score": None, "metrics": {}, "trials": trials}
+
+        return {1: task1, 2: task2, 3: task3, 4: task4}[task_number]
 
     def _restore_display(self) -> None:
         """독립 pygame TASK 종료 후 대시보드 화면을 복구한다."""

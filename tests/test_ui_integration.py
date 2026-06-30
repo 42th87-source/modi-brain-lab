@@ -44,6 +44,19 @@ class DashboardIntegrationTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.app.start_session("brain01")
 
+    def test_all_four_tasks_can_be_saved_and_ranked(self) -> None:
+        self.app.start_session("alltasks")
+        self.app.task_runners = {
+            task_number: self.app._demo_runner(task_number)
+            for task_number in range(1, 5)
+        }
+        for task_number in range(1, 5):
+            self.app.run_task(task_number)
+            self.assertEqual(self.app.current_screen.name, "interim_result")
+        report = self.app.finish_current_session()
+        self.assertTrue(all(report["task_scores"].get(f"task{number}") is not None for number in range(1, 5)))
+        self.assertEqual(report["rank"], 1)
+
 
 if __name__ == "__main__":
     unittest.main()

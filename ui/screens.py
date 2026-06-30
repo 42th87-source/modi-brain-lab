@@ -155,6 +155,14 @@ TASK_INFO = {
         "title": "TASK 2. 기억력과 감각 통합",
         "body": "제시되는 색상 순서를 기억하세요. 다이얼을 돌려 색상을 선택하고 버튼을 눌러 확정합니다. 일부 시행에서는 색상과 함께 소리가 제시됩니다.",
     },
+    3: {
+        "title": "TASK 3. 선택적 주의와 감각 모순",
+        "body": "빛이 나오면 버튼을 누르세요. 소리만 나오면 누르지 마세요. 시각 목표에 집중하고 청각 방해 자극에 대한 반응을 억제합니다.",
+    },
+    4: {
+        "title": "TASK 4. 운동 협응과 이중 과제",
+        "body": "자이로로 화면 속 커서를 중앙 목표 안에 유지하면서 스피커 비트에 맞춰 버튼을 누르세요. 먼저 단독 기준을 측정한 뒤 두 동작을 함께 수행합니다.",
+    },
 }
 
 
@@ -214,8 +222,8 @@ class InterimResultScreen(BaseScreen):
         self.result = dict(kwargs.get("result") or {})
 
     def next(self) -> None:
-        if self.task_number == 1:
-            self.app.show_task_instruction(2)
+        if self.task_number < 4:
+            self.app.show_task_instruction(self.task_number + 1)
         else:
             self.app.finish_current_session()
 
@@ -229,11 +237,23 @@ class InterimResultScreen(BaseScreen):
                 ("자이로 대표 반응시간", f"{metrics.get('gyro_median_ms', '-')} ms"),
                 ("TASK 1 점수", self.result.get("score", "-")),
             ]
-        else:
+        elif self.task_number == 2:
             rows = [
                 ("시각 조건 정확도", f"{metrics.get('visual_accuracy', '-')}%"),
                 ("시청각 조건 정확도", f"{metrics.get('audiovisual_accuracy', '-')}%"),
                 ("TASK 2 점수", self.result.get("score", "-")),
+            ]
+        elif self.task_number == 3:
+            rows = [
+                ("적중률", f"{metrics.get('hit_rate', '-')}%"),
+                ("억제 성공률", f"{metrics.get('inhibition_success_rate', '-')}%"),
+                ("TASK 3 점수", self.result.get("score", "-")),
+            ]
+        else:
+            rows = [
+                ("커서 목표 유지율", f"{metrics.get('dual_cursor_hold_rate', '-')}%"),
+                ("리듬 점수", metrics.get("rhythm_score", "-")),
+                ("TASK 4 점수", self.result.get("score", "-")),
             ]
         draw_metric_rows(surface, rows, pygame.Rect(100, 175, WINDOW_WIDTH - 200, 220))
         self.draw_buttons(surface)
