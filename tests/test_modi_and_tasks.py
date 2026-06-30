@@ -10,6 +10,7 @@ import pygame
 
 from modi_io import MockModiIO, RealModiIO
 from scoring import score_task3, score_task4
+from tasks.task4_coordination import target_position
 
 
 class FakeButton:
@@ -75,6 +76,11 @@ class ModiIOTests(unittest.TestCase):
 
 
 class NewTaskScoringTests(unittest.TestCase):
+    def test_task4_target_moves_on_fixed_schedule(self) -> None:
+        positions = [target_position(second, 960, 640) for second in (0, 2.5, 5.0, 7.5, 10.0)]
+        self.assertEqual(len(set(positions[:4])), 4)
+        self.assertEqual(positions[0], positions[4])
+
     def test_task3_trials_produce_attention_score(self) -> None:
         trials = [
             {"stimulus_condition": "congruent", "hit": True, "reaction_time_ms": 300},
