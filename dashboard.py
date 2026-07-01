@@ -10,7 +10,9 @@ import pygame
 
 from config import FPS, WINDOW_HEIGHT, WINDOW_WIDTH
 from data_manager import DataManager, get_data_manager
+from modi_io import BaseModiIO, create_modi_io
 from ui.screens import SCREEN_TYPES
+from ui.widgets import create_display
 
 
 TaskRunner = Callable[[str], dict[str, Any]]
@@ -25,16 +27,19 @@ class App:
         data_manager: DataManager | None = None,
         dev_mode: bool | None = None,
         task_runners: dict[int, TaskRunner] | None = None,
+        modi_io: BaseModiIO | None = None,
     ) -> None:
         pygame.init()
         pygame.display.set_caption("MODI 인지 능력 체험")
-        self.surface = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+        self.surface = create_display((WINDOW_WIDTH, WINDOW_HEIGHT))
         self.clock = pygame.time.Clock()
         self.data_manager = data_manager or get_data_manager()
         self.dev_mode = (
             os.environ.get("MODI_DEV_MODE", "1") == "1" if dev_mode is None else dev_mode
         )
         self.task_runners = task_runners or {}
+        force_mock = os.environ.get("SDL_VIDEODRIVER") == "dummy"
+        self.modi_io = modi_io or create_modi_io(force_mock=force_mock)
         self.state: dict[str, Any] = {}
         self.running = False
         self.screens = {screen_type.name: screen_type(self) for screen_type in SCREEN_TYPES}
@@ -46,16 +51,20 @@ class App:
 
         self.running = True
         while self.running:
-            for event in pygame.event.get():
+            events = pygame.event.get()
+            for event in events:
                 if event.type == pygame.QUIT:
                     self.running = False
                 elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     self.running = False
                 else:
                     self.current_screen.handle_event(event)
+            if self.modi_io.poll_button(events):
+                self.current_screen.handle_primary_action()
             self.current_screen.draw(self.surface)
             pygame.display.flip()
             self.clock.tick(FPS)
+        self.modi_io.close()
         pygame.quit()
 
     def show_screen(self, name: str, **kwargs: Any) -> None:
@@ -95,12 +104,12 @@ class App:
         session_id = self.state.get("session_id")
         if not participant_id or not session_id:
             raise RuntimeError("먼저 참가자 세션을 생성해야 합니다.")
-        self.show_screen("task_progress", task_number=task_number, status="테스트를 실행하고 있습니다.")
-        self.current_screen.draw(self.surface)
-        pygame.display.flip()
         try:
             runner = self._get_task_runner(task_number)
-            result = runner(participant_id)
+            if task_number in self.task_runners:
+                result = runner(participant_id)
+            else:
+                result = runner(participant_id, io=self.modi_io)
             self._restore_display()
             saved = self.data_manager.save_task_result(session_id, result)
         except Exception as error:
@@ -224,7 +233,7 @@ class App:
         if not pygame.display.get_init():
             pygame.display.init()
         pygame.display.set_caption("MODI 인지 능력 체험")
-        self.surface = pygame.display.set_mode((WINDOW_WIDTH, WINDOW_HEIGHT))
+        self.surface = create_display((WINDOW_WIDTH, WINDOW_HEIGHT))
 
 
 def run_dashboard() -> None:

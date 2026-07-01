@@ -9,19 +9,20 @@ from typing import Any
 import pygame
 
 from modi_io import BaseModiIO, create_modi_io
-from ui.widgets import COLORS, draw_text, draw_wrapped_text
+from ui.widgets import COLORS, create_display, draw_text, draw_wrapped_text
 
 
 TRIAL_ORDER = (
-    "congruent", "visual_only", "audio_only", "congruent",
-    "none", "audio_only", "visual_only", "congruent",
-    "audio_only", "congruent", "visual_only", "audio_only",
-    "congruent", "none", "visual_only", "congruent",
+    "congruent", "audio_only", "visual_only", "audio_only",
+    "none", "congruent", "audio_only", "visual_only",
+    "audio_only", "congruent", "none", "audio_only",
+    "visual_only", "congruent",
 )
 PRACTICE_ORDER = ("congruent", "audio_only")
-RESPONSE_WINDOW_MS = 700
+RESPONSE_WINDOW_MS = 500
 MIN_VALID_RT_MS = 150
-STIMULUS_MS = 150
+LIGHT_MS = 140
+SOUND_MS = 260
 
 
 def _present_trial(
@@ -42,7 +43,7 @@ def _present_trial(
         early = io.poll_button(events) or early
         surface.fill(COLORS["bg"])
         draw_text(surface, f"시행 {trial_index} / {total}", (45, 38), size=20, color=COLORS["muted"])
-        draw_text(surface, "빛이 나오면 누르세요", surface.get_rect().center, size=34, bold=True, center=True)
+        draw_text(surface, "빛이 나오면 버튼을 누르세요", (surface.get_width() // 2, 90), size=30, bold=True, center=True)
         pygame.display.flip()
         clock.tick(60)
 
@@ -52,7 +53,7 @@ def _present_trial(
     if has_light:
         io.set_led(100, 100, 100)
     if has_sound:
-        io.play_tone(523, 65)
+        io.play_tone(1500, 90)
     response_time: float | None = None
     while (time.perf_counter() - stimulus_started) * 1000 < RESPONSE_WINDOW_MS:
         elapsed_ms = (time.perf_counter() - stimulus_started) * 1000
@@ -61,13 +62,17 @@ def _present_trial(
             raise KeyboardInterrupt
         if response_time is None and io.poll_button(events):
             response_time = elapsed_ms
-        if elapsed_ms >= STIMULUS_MS:
             io.turn_off_led()
+        if elapsed_ms >= LIGHT_MS:
+            io.turn_off_led()
+        if elapsed_ms >= SOUND_MS:
             io.stop_tone()
         surface.fill(COLORS["bg"])
-        if has_light and elapsed_ms < STIMULUS_MS:
+        if has_light and elapsed_ms < LIGHT_MS:
             pygame.draw.circle(surface, pygame.Color("white"), surface.get_rect().center, 85)
-        draw_text(surface, "빛이 나오면 누르세요", (surface.get_width() // 2, 90), size=28, center=True)
+        elif condition == "audio_only" and elapsed_ms < LIGHT_MS:
+            pygame.draw.circle(surface, pygame.Color("#4A6FA5"), surface.get_rect().center, 68, width=10)
+        draw_text(surface, "빛이 나오면 버튼을 누르세요", (surface.get_width() // 2, 90), size=30, bold=True, center=True)
         pygame.display.flip()
         clock.tick(60)
     io.turn_off_led()
@@ -100,26 +105,29 @@ def run_task3(participant_id: str = "P001", io: BaseModiIO | None = None) -> dic
     owned_io = io is None
     io = io or create_modi_io()
     pygame.init()
-    surface = pygame.display.set_mode((960, 640))
+    surface = create_display((960, 640))
     pygame.display.set_caption("TASK 3 - 선택적 주의")
     clock = pygame.time.Clock()
     surface.fill(COLORS["bg"])
     draw_text(surface, "TASK 3. 선택적 주의", (480, 150), size=38, bold=True, center=True)
     draw_wrapped_text(
         surface,
-        "빛이 나오면 버튼을 누르세요. 소리만 나오면 누르지 마세요.\n모의 모드에서는 스페이스 키를 사용합니다.",
+        "중앙의 흰색 원이 나오면 버튼을 누르세요. 파란 원이나 소리만 나오면 누르지 마세요.\n모의 모드에서는 스페이스 키를 사용합니다.",
         pygame.Rect(150, 230, 660, 130),
         size=24,
     )
-    draw_text(surface, "Enter를 누르면 시작합니다.", (480, 440), size=22, color=COLORS["muted"], center=True)
+    draw_text(surface, "MODI 버튼을 누르면 시작합니다.", (480, 440), size=22, color=COLORS["muted"], center=True)
     pygame.display.flip()
     waiting = True
     while waiting:
-        for event in pygame.event.get():
+        events = pygame.event.get()
+        for event in events:
             if event.type == pygame.QUIT:
                 raise KeyboardInterrupt
             if event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_SPACE):
                 waiting = False
+        if io.poll_button(events):
+            waiting = False
         clock.tick(60)
 
     rng = random.Random(participant_id)
@@ -127,7 +135,7 @@ def run_task3(participant_id: str = "P001", io: BaseModiIO | None = None) -> dic
         for index, condition in enumerate(PRACTICE_ORDER, start=1):
             _present_trial(surface, clock, io, condition, 700, index, len(PRACTICE_ORDER))
         trials = [
-            _present_trial(surface, clock, io, condition, rng.randint(800, 1500), index, len(TRIAL_ORDER))
+            _present_trial(surface, clock, io, condition, rng.randint(400, 900), index, len(TRIAL_ORDER))
             for index, condition in enumerate(TRIAL_ORDER, start=1)
         ]
         return {"task_id": "task3", "score": None, "metrics": {"device_mode": "mock" if io.is_mock else "real"}, "trials": trials}

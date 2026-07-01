@@ -53,6 +53,13 @@ class BaseScreen:
         for button in self.buttons:
             button.draw(surface)
 
+    def handle_primary_action(self) -> None:
+        """MODI 버튼으로 화면의 대표 동작을 실행한다."""
+
+        primary = next((button for button in self.buttons if button.primary and button.enabled), None)
+        if primary is not None:
+            primary.callback()
+
 
 class StartScreen(BaseScreen):
     name = "start"
@@ -90,6 +97,9 @@ class StartScreen(BaseScreen):
         if self.input.handle_event(event):
             return
         super().handle_event(event)
+
+    def handle_primary_action(self) -> None:
+        self.submit(self.input.value)
 
     def draw(self, surface: pygame.Surface) -> None:
         super().draw(surface)
@@ -149,7 +159,7 @@ class OverviewScreen(BaseScreen):
 TASK_INFO = {
     1: {
         "title": "TASK 1. 반응속도와 입력 방식",
-        "body": "빛과 소리가 나오면 안내된 방식으로 빠르게 반응하세요. 버튼 조건에서는 버튼을 누르고, 자이로 조건에서는 손목을 아래쪽으로 한 번 뒤집습니다. 자극 전에 반응하면 다시 측정합니다.",
+        "body": "빛과 소리가 나오면 안내된 방식으로 빠르게 반응하세요. 버튼 조건에서는 버튼을 누르고, 자이로 조건에서는 손잡이를 좌우 한쪽으로 기울입니다. 센서를 뒤집지 마세요. 자극 전에 반응하면 다시 측정합니다.",
     },
     2: {
         "title": "TASK 2. 기억력과 감각 통합",
@@ -161,7 +171,7 @@ TASK_INFO = {
     },
     4: {
         "title": "TASK 4. 운동 협응과 이중 과제",
-        "body": "자이로로 화면 속 커서를 중앙 목표 안에 유지하면서 스피커 비트에 맞춰 버튼을 누르세요. 먼저 단독 기준을 측정한 뒤 두 동작을 함께 수행합니다.",
+        "body": "손잡이를 좌우로 기울여 파란 커서를 움직이고 노란 목표 영역 안에 유지하세요. 소리가 날 때는 버튼도 누릅니다.",
     },
 }
 
@@ -184,7 +194,7 @@ class TaskInstructionScreen(BaseScreen):
     def draw(self, surface: pygame.Surface) -> None:
         super().draw(surface)
         info = TASK_INFO[self.task_number]
-        self.draw_header(surface, info["title"], "안내를 읽고 준비되면 시작하세요.")
+        self.draw_header(surface, info["title"], "안내를 읽고 준비되면 MODI 버튼을 누르세요.")
         panel = pygame.Rect(62, 155, WINDOW_WIDTH - 124, 360)
         pygame.draw.rect(surface, COLORS["panel"], panel, border_radius=16)
         draw_wrapped_text(surface, info["body"], panel.inflate(-70, -70), size=26, line_gap=14)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from typing import Callable, Iterable
 
@@ -42,6 +43,7 @@ _ID_PATTERN = re.compile(r"^[가-힣A-Za-z0-9_-]+$")
 def get_font(size: int, bold: bool = False) -> pygame.font.Font:
     """사용 가능한 한글 글꼴을 찾아 캐시된 pygame Font를 반환한다."""
 
+    size = max(12, round(size * 1.08))
     key = (size, bold)
     cached = _font_cache.get(key)
     try:
@@ -52,6 +54,16 @@ def get_font(size: int, bold: bool = False) -> pygame.font.Font:
         match = pygame.font.match_font(_FONT_NAMES, bold=bold)
         _font_cache[key] = pygame.font.Font(match, size)
     return _font_cache[key]
+
+
+def create_display(size: tuple[int, int]) -> pygame.Surface:
+    """실행 시 논리 해상도를 유지한 전체 화면을 만들고 테스트에서는 창 모드를 쓴다."""
+
+    _font_cache.clear()
+    fullscreen = os.environ.get("MODI_FULLSCREEN", "1") == "1"
+    is_test_driver = os.environ.get("SDL_VIDEODRIVER") == "dummy"
+    flags = pygame.FULLSCREEN | pygame.SCALED if fullscreen and not is_test_driver else 0
+    return pygame.display.set_mode(size, flags)
 
 
 def draw_text(

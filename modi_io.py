@@ -4,12 +4,28 @@ from __future__ import annotations
 
 import os
 import builtins
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Iterable
 
 import numpy as np
 import pygame
+
+
+def _play_local_tone(frequency: int, volume: int) -> pygame.mixer.Channel | None:
+    """노트북 스피커로 반복 음을 재생해 MODI 스피커의 출력 실패를 보완한다."""
+
+    try:
+        if pygame.mixer.get_init() is None:
+            pygame.mixer.init(frequency=44_100, size=-16, channels=2)
+        sample_rate = int(pygame.mixer.get_init()[0])
+        times = np.arange(int(sample_rate * 0.18)) / sample_rate
+        wave = np.sin(2 * np.pi * frequency * times) * (volume / 100) * 16_000
+        stereo = np.column_stack((wave, wave)).astype(np.int16)
+        return pygame.sndarray.make_sound(stereo).play(loops=-1)
+    except (pygame.error, ValueError):
+        return None
 
 
 @dataclass(slots=True)
@@ -102,17 +118,9 @@ class MockModiIO(BaseModiIO):
 
     def play_tone(self, frequency: int, volume: int = 60) -> None:
         self.tone = (int(frequency), int(volume))
-        try:
-            if pygame.mixer.get_init() is None:
-                pygame.mixer.init(frequency=44_100, size=-16, channels=2)
-            sample_rate = int(pygame.mixer.get_init()[0])
-            times = np.arange(int(sample_rate * 0.15)) / sample_rate
-            wave = np.sin(2 * np.pi * frequency * times) * (volume / 100) * 16_000
-            stereo = np.column_stack((wave, wave)).astype(np.int16)
-            sound = pygame.sndarray.make_sound(stereo)
-            self._tone_channel = sound.play(loops=-1)
-        except (pygame.error, ValueError):
-            self._tone_channel = None
+        if self._tone_channel is not None:
+            self._tone_channel.stop()
+        self._tone_channel = _play_local_tone(frequency, volume)
 
     def stop_tone(self) -> None:
         if self._tone_channel is not None:
@@ -134,6 +142,9 @@ class RealModiIO(BaseModiIO):
         self.led = self._first("leds")
         self.speaker = self._first("speakers")
         self._last_button = False
+        self._last_clicked = False
+        self._last_button_event_at = -1.0
+        self._tone_channel: pygame.mixer.Channel | None = None
 
     @staticmethod
     def _connected_modi_ports() -> list[tuple[str, int | None]]:
@@ -200,8 +211,14 @@ class RealModiIO(BaseModiIO):
         current = bool(getattr(self.button, "pressed", False))
         clicked = bool(getattr(self.button, "clicked", False))
         rising = current and not self._last_button
+        click_edge = clicked and not self._last_clicked
         self._last_button = current
-        return clicked or rising
+        self._last_clicked = clicked
+        now = time.monotonic()
+        if (rising or click_edge) and now - self._last_button_event_at >= 0.25:
+            self._last_button_event_at = now
+            return True
+        return False
 
     def get_dial_value(self) -> float:
         if self.dial is None:
@@ -227,16 +244,22 @@ class RealModiIO(BaseModiIO):
     def play_tone(self, frequency: int, volume: int = 60) -> None:
         if self.speaker is not None:
             self.speaker.tune = int(frequency), max(0, min(100, int(volume)))
+        if self._tone_channel is not None:
+            self._tone_channel.stop()
+        self._tone_channel = _play_local_tone(frequency, volume)
 
     def stop_tone(self) -> None:
+        if self._tone_channel is not None:
+            self._tone_channel.stop()
+            self._tone_channel = None
         if self.speaker is not None:
-            reset = getattr(self.speaker, "reset", None)
-            if callable(reset):
-                reset()
-                return
             turn_off = getattr(self.speaker, "turn_off", None)
             if callable(turn_off):
                 turn_off()
+                return
+            reset = getattr(self.speaker, "reset", None)
+            if callable(reset):
+                reset()
             else:
                 self.speaker.volume = 0
 

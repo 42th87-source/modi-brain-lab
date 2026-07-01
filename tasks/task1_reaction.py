@@ -10,18 +10,20 @@ from typing import Any
 
 import pygame
 
-from config import GYRO_COMPLETE_ANGLE, GYRO_START_ANGULAR_VELOCITY
+from config import GYRO_START_ANGULAR_VELOCITY
 from modi_io import BaseModiIO, GyroState, create_modi_io
-from ui.widgets import COLORS, draw_text, draw_wrapped_text
+from ui.widgets import COLORS, create_display, draw_text, draw_wrapped_text
 
 
-TRIAL_ORDER = ("button", "gyro", "gyro", "button", "gyro", "button", "button", "gyro")
+TRIAL_ORDER = ("button", "gyro", "gyro", "button", "button", "gyro")
 PRACTICE_ORDER = ("button", "gyro")
 WAIT_RANGE_MS = (1500, 3000)
 MIN_VALID_RT_MS = 100
 MAX_VALID_RT_MS = 1500
 RESPONSE_TIMEOUT_MS = 3000
 RETURN_ANGLE = 10.0
+GYRO_START_ANGLE = 4.0
+GYRO_FINISH_ANGLE = 25.0
 
 
 def angular_speed(state: GyroState) -> float:
@@ -43,6 +45,7 @@ def angle_displacement(state: GyroState, neutral: GyroState) -> float:
 def _wait_for_continue(
     surface: pygame.Surface,
     clock: pygame.time.Clock,
+    io: BaseModiIO,
     title: str,
     detail: str,
 ) -> None:
@@ -55,6 +58,8 @@ def _wait_for_continue(
             for event in events
         ):
             return
+        if io.poll_button(events):
+            return
         surface.fill(COLORS["bg"])
         draw_text(surface, title, (surface.get_width() // 2, 205), size=35, bold=True, center=True)
         draw_wrapped_text(
@@ -66,7 +71,7 @@ def _wait_for_continue(
         )
         draw_text(
             surface,
-            "Enter를 누르면 시작합니다.",
+            "MODI 버튼을 누르면 시작합니다.",
             (surface.get_width() // 2, 470),
             size=21,
             center=True,
@@ -78,7 +83,7 @@ def _wait_for_continue(
 def _draw_waiting(surface: pygame.Surface, condition: str, label: str) -> None:
     surface.fill(COLORS["bg"])
     draw_text(surface, label, (40, 35), size=20, color=COLORS["muted"])
-    instruction = "버튼을 누르세요" if condition == "button" else "손잡이를 한 번 돌리세요"
+    instruction = "버튼을 누르세요" if condition == "button" else "손잡이를 좌우 한쪽으로 기울이세요"
     draw_text(surface, "신호를 기다리세요", surface.get_rect().center, size=36, bold=True, center=True)
     draw_text(
         surface,
@@ -88,6 +93,32 @@ def _draw_waiting(surface: pygame.Surface, condition: str, label: str) -> None:
         color=COLORS["muted"],
         center=True,
     )
+
+
+def _show_next_trial(
+    surface: pygame.Surface,
+    clock: pygame.time.Clock,
+    title: str,
+    duration_ms: int = 650,
+) -> None:
+    """추가 입력 없이 다음 시행 안내를 잠시 표시한다."""
+
+    started = time.perf_counter()
+    while (time.perf_counter() - started) * 1000 < duration_ms:
+        if any(event.type == pygame.QUIT for event in pygame.event.get()):
+            raise KeyboardInterrupt
+        surface.fill(COLORS["bg"])
+        draw_text(surface, title, surface.get_rect().center, size=32, bold=True, center=True)
+        draw_text(
+            surface,
+            "곧 자동으로 시작합니다.",
+            (surface.get_width() // 2, 390),
+            size=20,
+            color=COLORS["muted"],
+            center=True,
+        )
+        pygame.display.flip()
+        clock.tick(60)
 
 
 def _input_started(io: BaseModiIO, condition: str, events: list[pygame.event.Event]) -> bool:
@@ -161,7 +192,7 @@ def _run_trial(
         }
 
     io.set_led(100, 100, 100)
-    io.play_tone(880, 65)
+    io.play_tone(1200, 85)
     stimulus_time = time.perf_counter()
     response_started: float | None = None
     response_completed: float | None = None
@@ -175,19 +206,39 @@ def _run_trial(
         if condition == "button":
             if io.poll_button(events):
                 response_started = response_completed = time.perf_counter()
+                io.turn_off_led()
+                io.stop_tone()
                 break
         else:
-            if response_started is None and angular_speed(state) >= GYRO_START_ANGULAR_VELOCITY:
+            pitch_delta = state.pitch - neutral.pitch
+            roll_delta = state.roll - neutral.roll
+            control_delta = roll_delta if abs(roll_delta) >= abs(pitch_delta) else pitch_delta
+            if response_started is None and (
+                angular_speed(state) >= GYRO_START_ANGULAR_VELOCITY
+                or angle_displacement(state, neutral) >= GYRO_START_ANGLE
+            ):
                 response_started = time.perf_counter()
                 response_state = state
-            complete_angle = 30.0 if io.is_mock else GYRO_COMPLETE_ANGLE
+            complete_angle = 30.0 if io.is_mock else GYRO_FINISH_ANGLE
             if response_started is not None and angle_displacement(state, neutral) >= complete_angle:
                 response_completed = time.perf_counter()
                 break
 
         surface.fill(COLORS["bg"])
-        pygame.draw.circle(surface, pygame.Color("white"), surface.get_rect().center, 90)
-        draw_text(surface, "지금!", (surface.get_width() // 2, 500), size=42, bold=True, center=True)
+        if condition == "button":
+            pygame.draw.circle(surface, pygame.Color("white"), surface.get_rect().center, 90)
+            draw_text(surface, "지금! 버튼을 누르세요", (surface.get_width() // 2, 500), size=35, bold=True, center=True)
+        else:
+            center_x = surface.get_width() // 2
+            center_y = surface.get_height() // 2
+            target_offset = 175
+            cursor_x = max(70, min(surface.get_width() - 70, center_x + control_delta * 7.0))
+            pygame.draw.line(surface, COLORS["muted"], (center_x - target_offset, center_y), (center_x + target_offset, center_y), width=5)
+            for target_x in (center_x - target_offset, center_x + target_offset):
+                pygame.draw.circle(surface, pygame.Color("#F6C453"), (target_x, center_y), 55, width=10)
+            pygame.draw.circle(surface, COLORS["primary"], (int(cursor_x), center_y), 22)
+            pygame.draw.circle(surface, pygame.Color("white"), (int(cursor_x), center_y), 22, width=3)
+            draw_text(surface, "노란 목표 중 한쪽으로 파란 커서를 옮기세요", (center_x, 500), size=27, bold=True, center=True)
         pygame.display.flip()
         clock.tick(60)
 
@@ -229,7 +280,7 @@ def run_task1(participant_id: str = "P001", io: BaseModiIO | None = None) -> dic
     owned_io = io is None
     io = io or create_modi_io()
     pygame.init()
-    surface = pygame.display.set_mode((960, 640))
+    surface = create_display((960, 640))
     pygame.display.set_caption("TASK 1 - 반응속도와 입력 방식")
     clock = pygame.time.Clock()
     rng = random.Random(str(participant_id))
@@ -239,16 +290,13 @@ def run_task1(participant_id: str = "P001", io: BaseModiIO | None = None) -> dic
         _wait_for_continue(
             surface,
             clock,
+            io,
             "TASK 1. 반응속도와 입력 방식",
-            "빛과 소리가 나오면 버튼 조건에서는 버튼을 누르고, 자이로 조건에서는 손잡이를 한 번 돌립니다.",
+            "빛과 소리가 나오면 버튼 조건에서는 버튼을 누르고, 자이로 조건에서는 손잡이를 좌우 한쪽으로 기울입니다. 뒤집지 마세요.",
         )
         for index, condition in enumerate(PRACTICE_ORDER, start=1):
-            _wait_for_continue(
-                surface,
-                clock,
-                f"{condition.upper()} 연습",
-                "신호보다 먼저 움직이면 조기 반응입니다. 편안한 시작 자세를 유지하세요.",
-            )
+            practice_title = "버튼 연습" if condition == "button" else "자이로 연습 · 손잡이를 좌우로 기울이기"
+            _show_next_trial(surface, clock, practice_title, duration_ms=1000)
             _run_trial(
                 surface,
                 clock,
@@ -262,11 +310,10 @@ def run_task1(participant_id: str = "P001", io: BaseModiIO | None = None) -> dic
 
         for index, condition in enumerate(TRIAL_ORDER, start=1):
             while True:
-                _wait_for_continue(
+                _show_next_trial(
                     surface,
                     clock,
                     f"시행 {index} / {len(TRIAL_ORDER)} · {condition.upper()}",
-                    "가운데 자세를 유지하고 신호를 기다리세요.",
                 )
                 row = _run_trial(
                     surface,

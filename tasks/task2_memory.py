@@ -10,7 +10,7 @@ from typing import Any
 import pygame
 
 from modi_io import BaseModiIO, create_modi_io
-from ui.widgets import COLORS as UI_COLORS, draw_text, draw_wrapped_text
+from ui.widgets import COLORS as UI_COLORS, create_display, draw_text, draw_wrapped_text
 
 
 COLOR_STIMULI = {
@@ -18,7 +18,7 @@ COLOR_STIMULI = {
         "label": "빨강",
         "rgb": (100, 0, 0),
         "screen_rgb": pygame.Color(239, 68, 68),
-        "frequency": 262,
+        "frequency": 700,
         "dial_min": 0,
         "dial_max": 24,
     },
@@ -26,7 +26,7 @@ COLOR_STIMULI = {
         "label": "초록",
         "rgb": (0, 100, 0),
         "screen_rgb": pygame.Color(34, 197, 94),
-        "frequency": 330,
+        "frequency": 1000,
         "dial_min": 25,
         "dial_max": 49,
     },
@@ -34,7 +34,7 @@ COLOR_STIMULI = {
         "label": "파랑",
         "rgb": (0, 0, 100),
         "screen_rgb": pygame.Color(59, 130, 246),
-        "frequency": 392,
+        "frequency": 1400,
         "dial_min": 50,
         "dial_max": 74,
     },
@@ -42,27 +42,26 @@ COLOR_STIMULI = {
         "label": "노랑",
         "rgb": (100, 80, 0),
         "screen_rgb": pygame.Color(250, 204, 21),
-        "frequency": 523,
+        "frequency": 1900,
         "dial_min": 75,
         "dial_max": 100,
     },
 }
 COLOR_ORDER = ("red", "green", "blue", "yellow")
 TRIAL_ORDER = (
-    ("visual", 3),
-    ("audiovisual", 3),
-    ("audiovisual", 4),
     ("visual", 4),
+    ("audiovisual", 4),
     ("audiovisual", 5),
     ("visual", 5),
     ("visual", 6),
     ("audiovisual", 6),
 )
-PRACTICE_TRIAL = ("visual", 2)
-STIMULUS_MS = 600
-BLANK_MS = 300
-POST_SEQUENCE_PAUSE_MS = 350
-CONFIRM_DEBOUNCE_MS = 180
+PRACTICE_TRIAL = ("visual", 3)
+STIMULUS_MS = 450
+TONE_MS = 400
+BLANK_MS = 200
+POST_SEQUENCE_PAUSE_MS = 250
+CONFIRM_DEBOUNCE_MS = 800
 
 
 def participant_seed(participant_id: str) -> int:
@@ -95,7 +94,7 @@ def color_from_dial(value: float) -> str:
     return "yellow"
 
 
-def _wait_for_start(surface: pygame.Surface, clock: pygame.time.Clock) -> None:
+def _wait_for_start(surface: pygame.Surface, clock: pygame.time.Clock, io: BaseModiIO) -> None:
     while True:
         events = pygame.event.get()
         if any(event.type == pygame.QUIT for event in events):
@@ -105,6 +104,8 @@ def _wait_for_start(surface: pygame.Surface, clock: pygame.time.Clock) -> None:
             and event.key in (pygame.K_RETURN, pygame.K_SPACE)
             for event in events
         ):
+            return
+        if io.poll_button(events):
             return
         surface.fill(UI_COLORS["bg"])
         draw_text(surface, "TASK 2. 기억력과 감각 통합", (surface.get_width() // 2, 165), size=36, bold=True, center=True)
@@ -117,7 +118,7 @@ def _wait_for_start(surface: pygame.Surface, clock: pygame.time.Clock) -> None:
             size=23,
             color=UI_COLORS["text"],
         )
-        draw_text(surface, "Enter를 누르면 시작합니다.", (surface.get_width() // 2, 480), size=22, color=UI_COLORS["muted"], center=True)
+        draw_text(surface, "MODI 버튼을 누르면 시작합니다.", (surface.get_width() // 2, 480), size=22, color=UI_COLORS["muted"], center=True)
         pygame.display.flip()
         clock.tick(60)
 
@@ -148,7 +149,7 @@ def _wait_for_confirm(
             size=22,
             color=UI_COLORS["muted"],
         )
-        draw_text(surface, "버튼 또는 Enter를 누르면 시작합니다.", (surface.get_width() // 2, 460), size=21, center=True)
+        draw_text(surface, "MODI 버튼을 누르면 시작합니다.", (surface.get_width() // 2, 460), size=21, center=True)
         pygame.display.flip()
         clock.tick(60)
 
@@ -165,7 +166,7 @@ def _present_sequence(
         red, green, blue = spec["rgb"]
         io.set_led(red, green, blue)
         if condition == "audiovisual":
-            io.play_tone(spec["frequency"], 60)
+            io.play_tone(spec["frequency"], 100)
         started = time.perf_counter()
         while (time.perf_counter() - started) * 1000 < STIMULUS_MS:
             events = pygame.event.get()
@@ -179,6 +180,8 @@ def _present_sequence(
                 draw_text(surface, f"{spec['frequency']}Hz", (surface.get_width() // 2, 525), size=21, color=UI_COLORS["muted"], center=True)
             pygame.display.flip()
             clock.tick(60)
+            if condition == "audiovisual" and (time.perf_counter() - started) * 1000 >= TONE_MS:
+                io.stop_tone()
 
         io.turn_off_led()
         io.stop_tone()
@@ -204,8 +207,9 @@ def _draw_color_choices(
     expected_length: int,
 ) -> None:
     surface.fill(UI_COLORS["bg"])
-    draw_text(surface, f"입력 {len(response) + 1} / {expected_length}", (surface.get_width() // 2, 72), size=30, bold=True, center=True)
-    draw_text(surface, "다이얼로 색상을 고르고 버튼으로 확정하세요.", (surface.get_width() // 2, 116), size=20, color=UI_COLORS["muted"], center=True)
+    current_number = min(len(response) + 1, expected_length)
+    draw_text(surface, f"입력 {current_number} / {expected_length}", (surface.get_width() // 2, 72), size=30, bold=True, center=True)
+    draw_text(surface, "다이얼을 천천히 돌려 흰 테두리를 옮기고 버튼을 한 번 눌러 확정하세요.", (surface.get_width() // 2, 116), size=20, color=UI_COLORS["muted"], center=True)
 
     box_size = 122
     gap = 30
@@ -225,16 +229,10 @@ def _draw_color_choices(
             size=18,
             center=True,
         )
-        draw_text(
-            surface,
-            f"{spec['dial_min']}~{spec['dial_max']}",
-            (rect.centerx, rect.bottom + 54),
-            size=16,
-            center=True,
-            color=UI_COLORS["muted"],
-        )
 
-    labels = " ".join(COLOR_STIMULI[color]["label"] for color in response) or "-"
+    selected_label = COLOR_STIMULI[selected]["label"]
+    draw_text(surface, f"현재 선택: {selected_label}", (surface.get_width() // 2, 455), size=27, bold=True, center=True)
+    labels = " → ".join(COLOR_STIMULI[color]["label"] for color in response) or "-"
     draw_text(surface, f"입력됨: {labels}", (surface.get_width() // 2, 500), size=23, center=True)
 
 
@@ -266,6 +264,7 @@ def _collect_response(
             if (now - last_confirmed) * 1000 >= CONFIRM_DEBOUNCE_MS:
                 response.append(selected)
                 last_confirmed = now
+                io.turn_off_led()
 
         if len(response) < expected_length:
             _draw_color_choices(surface, selected, response, expected_length)
@@ -273,6 +272,18 @@ def _collect_response(
         clock.tick(60)
 
     response_completed = time.perf_counter()
+    _draw_color_choices(surface, selected, response, expected_length)
+    draw_text(
+        surface,
+        "입력 완료",
+        (surface.get_width() // 2, 565),
+        size=25,
+        color=UI_COLORS["success"],
+        bold=True,
+        center=True,
+    )
+    pygame.display.flip()
+    pygame.time.wait(500)
     return response, response_started, response_completed
 
 
@@ -339,7 +350,7 @@ def _run_trial(
     )
     draw_text(surface, "다음 단계로 이동합니다.", (surface.get_width() // 2, 345), size=22, color=UI_COLORS["muted"], center=True)
     pygame.display.flip()
-    pygame.time.wait(800)
+    pygame.time.wait(450)
 
     return {
         "trial_index": trial_index,
@@ -363,14 +374,14 @@ def run_task2(participant_id: str = "P001", io: BaseModiIO | None = None) -> dic
     owned_io = io is None
     io = io or create_modi_io()
     pygame.init()
-    surface = pygame.display.set_mode((960, 640))
+    surface = create_display((960, 640))
     pygame.display.set_caption("TASK 2 - 기억력과 감각 통합")
     clock = pygame.time.Clock()
     random_seed = participant_seed(participant_id)
     rng = random.Random(random_seed)
 
     try:
-        _wait_for_start(surface, clock)
+        _wait_for_start(surface, clock, io)
         practice_condition, practice_length = PRACTICE_TRIAL
         _run_trial(
             surface,
