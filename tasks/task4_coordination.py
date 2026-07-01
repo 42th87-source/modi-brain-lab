@@ -14,19 +14,41 @@ from ui.widgets import COLORS, draw_text, draw_wrapped_text
 
 BEAT_INTERVAL_MS = 750
 VALID_BEAT_WINDOW_MS = 400
-TARGET_RADIUS = 70
+TARGET_RADIUS = 58
 CURSOR_RADIUS = 16
 GYRO_SCALE = 5.0
-TARGET_INTERVAL_S = 2.5
-TARGET_PATH = ((-150, 0), (0, -130), (150, 0), (0, 130))
+TARGET_CYCLE_S = 10.0
+TARGET_WAYPOINTS = (
+    (-175, -90),
+    (155, 105),
+    (-55, 150),
+    (185, -115),
+    (-165, 70),
+    (35, -155),
+    (165, 135),
+    (-125, -135),
+)
+TARGET_SEGMENT_DURATIONS = (1.4, 1.0, 1.7, 1.2, 1.5, 0.9, 1.3, 1.0)
 
 
 def target_position(elapsed_s: float, width: int, height: int) -> tuple[int, int]:
-    """모든 참가자에게 동일하게 반복되는 목표 위치를 반환한다."""
+    """속도와 방향이 달라지는 10초 고정 경로 위의 목표 위치를 반환한다."""
 
-    index = int(elapsed_s // TARGET_INTERVAL_S) % len(TARGET_PATH)
-    offset_x, offset_y = TARGET_PATH[index]
-    return width // 2 + offset_x, height // 2 + offset_y
+    cycle_time = elapsed_s % TARGET_CYCLE_S
+    accumulated = 0.0
+    for index, duration in enumerate(TARGET_SEGMENT_DURATIONS):
+        if cycle_time < accumulated + duration:
+            progress = (cycle_time - accumulated) / duration
+            # 급격한 방향 전환은 유지하되 구간 안에서는 부드럽게 이동한다.
+            eased = progress * progress * (3.0 - 2.0 * progress)
+            start_x, start_y = TARGET_WAYPOINTS[index]
+            end_x, end_y = TARGET_WAYPOINTS[(index + 1) % len(TARGET_WAYPOINTS)]
+            offset_x = start_x + (end_x - start_x) * eased
+            offset_y = start_y + (end_y - start_y) * eased
+            return round(width / 2 + offset_x), round(height / 2 + offset_y)
+        accumulated += duration
+    start_x, start_y = TARGET_WAYPOINTS[0]
+    return round(width / 2 + start_x), round(height / 2 + start_y)
 
 
 def _wait_for_start(surface: pygame.Surface, clock: pygame.time.Clock, title: str, detail: str) -> None:

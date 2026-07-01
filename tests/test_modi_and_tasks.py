@@ -77,9 +77,9 @@ class ModiIOTests(unittest.TestCase):
 
 class NewTaskScoringTests(unittest.TestCase):
     def test_task4_target_moves_on_fixed_schedule(self) -> None:
-        positions = [target_position(second, 960, 640) for second in (0, 2.5, 5.0, 7.5, 10.0)]
-        self.assertEqual(len(set(positions[:4])), 4)
-        self.assertEqual(positions[0], positions[4])
+        positions = [target_position(second, 960, 640) for second in (0, 1.0, 2.5, 4.0, 7.0, 10.0)]
+        self.assertGreaterEqual(len(set(positions[:-1])), 5)
+        self.assertEqual(positions[0], positions[-1])
 
     def test_task3_trials_produce_attention_score(self) -> None:
         trials = [
