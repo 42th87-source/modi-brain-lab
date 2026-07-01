@@ -1,6 +1,7 @@
 """MODI 입출력 계층과 TASK 3·4 채점 호환성을 검사한다."""
 
 import os
+import random
 import unittest
 
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
@@ -10,6 +11,7 @@ import pygame
 
 from modi_io import MockModiIO, RealModiIO
 from scoring import score_task3, score_task4
+from tasks.task2_memory import color_from_dial, generate_sequence
 from tasks.task4_coordination import target_position
 
 
@@ -76,6 +78,17 @@ class ModiIOTests(unittest.TestCase):
 
 
 class NewTaskScoringTests(unittest.TestCase):
+    def test_task2_dial_ranges_select_colors(self) -> None:
+        self.assertEqual(color_from_dial(0), "red")
+        self.assertEqual(color_from_dial(30), "green")
+        self.assertEqual(color_from_dial(60), "blue")
+        self.assertEqual(color_from_dial(90), "yellow")
+
+    def test_task2_sequence_avoids_three_repeated_colors(self) -> None:
+        sequence = generate_sequence(random.Random(7), 40)
+        triples = zip(sequence, sequence[1:], sequence[2:])
+        self.assertFalse(any(first == second == third for first, second, third in triples))
+
     def test_task4_target_moves_on_fixed_schedule(self) -> None:
         positions = [target_position(second, 960, 640) for second in (0, 1.0, 2.5, 4.0, 7.0, 10.0)]
         self.assertGreaterEqual(len(set(positions[:-1])), 5)
