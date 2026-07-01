@@ -28,6 +28,11 @@ class DashboardIntegrationTests(unittest.TestCase):
         session = self.app.start_session("주혁테스트")
         self.assertEqual(self.app.state["session_id"], session["session_id"])
 
+        self.app.task_runners = {
+            task_number: self.app._demo_runner(task_number)
+            for task_number in (1, 2)
+        }
+
         self.app.run_task(1)
         self.assertEqual(self.app.current_screen.name, "interim_result")
         self.app.run_task(2)
