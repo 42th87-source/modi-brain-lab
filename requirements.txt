@@ -1,4 +1,5 @@
 pymodi-plus
+pymodi
 pygame
 pandas
 matplotlib

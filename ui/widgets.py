@@ -43,7 +43,12 @@ def get_font(size: int, bold: bool = False) -> pygame.font.Font:
     """사용 가능한 한글 글꼴을 찾아 캐시된 pygame Font를 반환한다."""
 
     key = (size, bold)
-    if key not in _font_cache:
+    cached = _font_cache.get(key)
+    try:
+        cache_is_valid = cached is not None and cached.size("M")[0] > 0
+    except pygame.error:
+        cache_is_valid = False
+    if not cache_is_valid:
         match = pygame.font.match_font(_FONT_NAMES, bold=bold)
         _font_cache[key] = pygame.font.Font(match, size)
     return _font_cache[key]

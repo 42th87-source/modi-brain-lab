@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import builtins
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import Any, Iterable
 
@@ -119,16 +121,60 @@ class RealModiIO(BaseModiIO):
 
     def __init__(self, bundle: Any | None = None) -> None:
         if bundle is None:
-            import modi
-
-            bundle = modi.MODI()
+            bundle = self._connect_bundle()
         self.bundle = bundle
         self.button = self._first("buttons")
         self.dial = self._first("dials")
-        self.gyro = self._first("gyros")
+        self.gyro = self._first("imus") or self._first("gyros")
         self.led = self._first("leds")
         self.speaker = self._first("speakers")
         self._last_button = False
+
+    @staticmethod
+    def _connected_modi_ports() -> list[tuple[str, int | None]]:
+        """USB ID로 연결된 MODI 네트워크 모듈의 세대와 포트를 찾는다."""
+
+        try:
+            from serial.tools import list_ports
+
+            return [
+                (port.device, port.pid)
+                for port in list_ports.comports()
+                if port.vid == 0x2FDE and port.pid in (0x0002, 0x0003)
+            ]
+        except ImportError:
+            return []
+
+    @staticmethod
+    @contextmanager
+    def _skip_legacy_reset_prompt():
+        """기존 MODI의 사용자 코드를 지우지 않고 초기화 질문만 건너뛴다."""
+
+        original_input = builtins.input
+        builtins.input = lambda _prompt="": "n"
+        try:
+            yield
+        finally:
+            builtins.input = original_input
+
+    @classmethod
+    def _connect_bundle(cls) -> Any:
+        ports = cls._connected_modi_ports()
+        legacy_port = next((device for device, pid in ports if pid == 0x0002), None)
+        plus_port = next((device for device, pid in ports if pid == 0x0003), None)
+
+        if legacy_port:
+            import modi
+
+            with cls._skip_legacy_reset_prompt():
+                return modi.MODI(port=legacy_port)
+
+        if plus_port:
+            from modi_plus import MODIPlus
+
+            return MODIPlus(port=plus_port)
+
+        raise ConnectionError("USB로 연결된 MODI 네트워크 모듈을 찾지 못했습니다.")
 
     def _first(self, collection_name: str) -> Any:
         collection = getattr(self.bundle, collection_name, None)
@@ -161,9 +207,9 @@ class RealModiIO(BaseModiIO):
         if self.gyro is None:
             return GyroState()
         return GyroState(
-            pitch=float(getattr(self.gyro, "pitch", 0.0)),
-            roll=float(getattr(self.gyro, "roll", 0.0)),
-            yaw=float(getattr(self.gyro, "yaw", 0.0)),
+            pitch=float(getattr(self.gyro, "pitch", getattr(self.gyro, "angle_y", 0.0))),
+            roll=float(getattr(self.gyro, "roll", getattr(self.gyro, "angle_x", 0.0))),
+            yaw=float(getattr(self.gyro, "yaw", getattr(self.gyro, "angle_z", 0.0))),
             angular_velocity_x=float(getattr(self.gyro, "angular_vel_x", 0.0)),
             angular_velocity_y=float(getattr(self.gyro, "angular_vel_y", 0.0)),
             angular_velocity_z=float(getattr(self.gyro, "angular_vel_z", 0.0)),
@@ -179,6 +225,10 @@ class RealModiIO(BaseModiIO):
 
     def stop_tone(self) -> None:
         if self.speaker is not None:
+            reset = getattr(self.speaker, "reset", None)
+            if callable(reset):
+                reset()
+                return
             turn_off = getattr(self.speaker, "turn_off", None)
             if callable(turn_off):
                 turn_off()

@@ -31,6 +31,15 @@ class FakeGyro:
     angular_vel_z = 3
 
 
+class FakeImu:
+    angle_x = -21
+    angle_y = 14
+    angle_z = 5
+    angular_vel_x = 4
+    angular_vel_y = 5
+    angular_vel_z = 6
+
+
 class FakeLed:
     rgb = (0, 0, 0)
 
@@ -49,6 +58,11 @@ class FakeBundle:
     gyros = [FakeGyro()]
     leds = [FakeLed()]
     speakers = [FakeSpeaker()]
+
+
+class FakePlusBundle(FakeBundle):
+    imus = [FakeImu()]
+    gyros = []
 
 
 class ModiIOTests(unittest.TestCase):
@@ -73,6 +87,20 @@ class ModiIOTests(unittest.TestCase):
         self.assertEqual(io.led.rgb, (100, 20, 5))
         io.play_tone(440, 60)
         self.assertEqual(io.speaker.tune, (440, 60))
+
+    def test_modi_plus_imu_property_names_are_supported(self) -> None:
+        io = RealModiIO(FakePlusBundle())
+        gyro = io.get_gyro()
+        self.assertEqual(gyro.roll, -21)
+        self.assertEqual(gyro.pitch, 14)
+
+    def test_legacy_reset_prompt_is_skipped_without_deleting_code(self) -> None:
+        import builtins
+
+        original_input = builtins.input
+        with RealModiIO._skip_legacy_reset_prompt():
+            self.assertEqual(builtins.input("reset?"), "n")
+        self.assertIs(builtins.input, original_input)
 
 
 class NewTaskScoringTests(unittest.TestCase):
