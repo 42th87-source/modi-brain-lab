@@ -35,3 +35,4 @@ def save_task1_rows(filename, rows):
         writer = csv.DictWriter(f, fieldnames=FIELDNAMES_TASK1)
         writer.writeheader()
         writer.writerows(rows)
+
