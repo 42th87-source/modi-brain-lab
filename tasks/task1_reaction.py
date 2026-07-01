@@ -1,351 +1,304 @@
-import time
+"""버튼과 자이로 입력의 반응시간 차이를 측정하는 TASK 1을 실행한다."""
+
+from __future__ import annotations
+
+import math
 import random
-
-from config import (
-    TRIAL_ORDER_TASK1,
-    RANDOM_WAIT_MIN_MS,
-    RANDOM_WAIT_MAX_MS,
-    PREDICTION_LIMIT_MS,
-    DELAY_LIMIT_MS,
-    GYRO_ANGULAR_THRESHOLD,
-    GYRO_COMPLETE_ANGLE,
-    GYRO_RETURN_ANGLE,
-    POLL_INTERVAL
-)
-
-from data_manager import make_task1_filename, save_task1_rows
-from scoring import calculate_task1_summary
-
-
-def now_ms():
-    return time.perf_counter() * 1000
-
-
-class Task1Reaction:
-    def __init__(self, modi_io, participant_id):
-        self.modi = modi_io
-        self.participant_id = participant_id
-        self.rows = []
-        self.filename = make_task1_filename(participant_id)
-
-    def show_ready(self, condition):
-        print()
-        print("==============================")
-        print(f"조건: {condition}")
-        print("준비하세요.")
-        print("==============================")
-
-    def make_invalid_row(self, trial_index, condition, random_wait_ms, early_response, delayed_response, retry_count):
-        return {
-            "participant_id": self.participant_id,
-            "trial_index": trial_index,
-            "input_condition": condition,
-            "random_wait_ms": random_wait_ms,
-            "stimulus_time": "",
-            "response_start_time": "",
-            "response_complete_time": "",
-            "reaction_time_ms": "",
-            "completion_time_ms": "",
-            "gyro_pitch": "",
-            "gyro_roll": "",
-            "gyro_angular_velocity": "",
-            "early_response": early_response,
-            "delayed_response": delayed_response,
-            "valid": False,
-            "retry_count": retry_count
-        }
-
-    def save(self):
-        save_task1_rows(self.filename, self.rows)
-
-    def count_valid(self, condition):
-        count = 0
-
-        for row in self.rows:
-            if row["input_condition"] == condition and row["valid"] is True:
-                count += 1
-
-        return count
-
-    def wait_gyro_return(self, start_pitch, start_roll):
-        print("자이로를 시작 자세로 돌려놓으세요.")
-
-        while True:
-            state = self.modi.get_gyro_state()
-
-            dp = abs(state["pitch"] - start_pitch)
-            dr = abs(state["roll"] - start_roll)
-
-            if dp <= GYRO_RETURN_ANGLE and dr <= GYRO_RETURN_ANGLE:
-                print("복귀 확인")
-                break
-
-            time.sleep(0.05)
-
-    def run_button_trial(self, trial_index, retry_count):
-        self.show_ready("button")
-
-        random_wait_ms = random.randint(RANDOM_WAIT_MIN_MS, RANDOM_WAIT_MAX_MS)
-
-        wait_start = now_ms()
-        early_response = False
-
-        while now_ms() - wait_start < random_wait_ms:
-            if self.modi.is_button_pressed():
-                early_response = True
-                break
-
-            time.sleep(POLL_INTERVAL)
-
-        if early_response:
-            print("조기 반응: 재시행")
-            return self.make_invalid_row(
-                trial_index,
-                "button",
-                random_wait_ms,
-                True,
-                False,
-                retry_count
-            )
-
-        self.modi.stimulus_on()
-        stimulus_time = now_ms()
-
-        response_start_time = None
-
-        while True:
-            if self.modi.is_button_pressed():
-                response_start_time = now_ms()
-                break
-
-            if now_ms() - stimulus_time > 3000:
-                response_start_time = now_ms()
-                break
-
-            time.sleep(POLL_INTERVAL)
-
-        self.modi.stimulus_off()
-
-        reaction_time_ms = response_start_time - stimulus_time
-        delayed_response = reaction_time_ms > DELAY_LIMIT_MS
-        valid = reaction_time_ms >= PREDICTION_LIMIT_MS and not delayed_response
-
-        if reaction_time_ms < PREDICTION_LIMIT_MS:
-            print(f"{PREDICTION_LIMIT_MS}ms 미만 예측 반응: 재시행")
-        elif delayed_response:
-            print("1500ms 초과 지연 반응: 기록은 하지만 대표값 제외")
-        else:
-            print(f"유효 반응: {reaction_time_ms:.1f} ms")
-
-        return {
-            "participant_id": self.participant_id,
-            "trial_index": trial_index,
-            "input_condition": "button",
-            "random_wait_ms": random_wait_ms,
-            "stimulus_time": stimulus_time,
-            "response_start_time": response_start_time,
-            "response_complete_time": response_start_time,
-            "reaction_time_ms": reaction_time_ms,
-            "completion_time_ms": reaction_time_ms,
-            "gyro_pitch": "",
-            "gyro_roll": "",
-            "gyro_angular_velocity": "",
-            "early_response": False,
-            "delayed_response": delayed_response,
-            "valid": valid,
-            "retry_count": retry_count
-        }
-
-    def run_gyro_trial(self, trial_index, retry_count):
-        self.show_ready("gyro")
-
-        start_state = self.modi.get_gyro_state()
-        start_pitch = start_state["pitch"]
-        start_roll = start_state["roll"]
-
-        random_wait_ms = random.randint(RANDOM_WAIT_MIN_MS, RANDOM_WAIT_MAX_MS)
-
-        wait_start = now_ms()
-        early_response = False
-
-        while now_ms() - wait_start < random_wait_ms:
-            state = self.modi.get_gyro_state()
-
-            if state["angular_velocity"] >= GYRO_ANGULAR_THRESHOLD:
-                early_response = True
-                break
-
-            time.sleep(POLL_INTERVAL)
-
-        if early_response:
-            print("조기 반응: 재시행")
-            return self.make_invalid_row(
-                trial_index,
-                "gyro",
-                random_wait_ms,
-                True,
-                False,
-                retry_count
-            )
-
-        self.modi.stimulus_on()
-        stimulus_time = now_ms()
-
-        response_start_time = None
-        response_complete_time = None
-
-        response_pitch = ""
-        response_roll = ""
-        response_angular_velocity = ""
-
-        while True:
-            state = self.modi.get_gyro_state()
-
-            pitch = state["pitch"]
-            roll = state["roll"]
-            angular_velocity = state["angular_velocity"]
-
-            if response_start_time is None:
-                if angular_velocity >= GYRO_ANGULAR_THRESHOLD:
-                    response_start_time = now_ms()
-                    response_pitch = pitch
-                    response_roll = roll
-                    response_angular_velocity = angular_velocity
-
-            if response_start_time is not None:
-                dp = abs(pitch - start_pitch)
-                dr = abs(roll - start_roll)
-
-                if dp >= GYRO_COMPLETE_ANGLE or dr >= GYRO_COMPLETE_ANGLE:
-                    response_complete_time = now_ms()
-                    break
-
-            if now_ms() - stimulus_time > 3000:
-                if response_start_time is None:
-                    response_start_time = now_ms()
-
-                response_complete_time = now_ms()
-                break
-
-            time.sleep(POLL_INTERVAL)
-
-        self.modi.stimulus_off()
-
-        reaction_time_ms = response_start_time - stimulus_time
-        completion_time_ms = response_complete_time - stimulus_time
-
-        delayed_response = reaction_time_ms > DELAY_LIMIT_MS
-        valid = reaction_time_ms >= PREDICTION_LIMIT_MS and not delayed_response
-
-        if reaction_time_ms < PREDICTION_LIMIT_MS:
-            print("100ms 미만 예측 반응: 재시행")
-        elif delayed_response:
-            print("1500ms 초과 지연 반응: 기록은 하지만 대표값 제외")
-        else:
-            print(f"유효 반응 시작: {reaction_time_ms:.1f} ms")
-            print(f"동작 완료: {completion_time_ms:.1f} ms")
-
-        self.wait_gyro_return(start_pitch, start_roll)
-
-        return {
-            "participant_id": self.participant_id,
-            "trial_index": trial_index,
-            "input_condition": "gyro",
-            "random_wait_ms": random_wait_ms,
-            "stimulus_time": stimulus_time,
-            "response_start_time": response_start_time,
-            "response_complete_time": response_complete_time,
-            "reaction_time_ms": reaction_time_ms,
-            "completion_time_ms": completion_time_ms,
-            "gyro_pitch": response_pitch,
-            "gyro_roll": response_roll,
-            "gyro_angular_velocity": response_angular_velocity,
-            "early_response": False,
-            "delayed_response": delayed_response,
-            "valid": valid,
-            "retry_count": retry_count
-        }
-
-    def run_one_trial_with_retry(self, trial_index, condition):
-        retry_count = 0
-
-        while True:
-            input(f"{trial_index}번째 시행({condition}) 준비되면 Enter")
-
-            if condition == "button":
-                row = self.run_button_trial(trial_index, retry_count)
-            else:
-                row = self.run_gyro_trial(trial_index, retry_count)
-
-            self.rows.append(row)
-            self.save()
-
-            if row["early_response"] is True:
-                retry_count += 1
-                continue
-
-            if row["reaction_time_ms"] != "":
-                if float(row["reaction_time_ms"]) < PREDICTION_LIMIT_MS:
-                    retry_count += 1
-                    continue
-
+import time
+from statistics import median
+from typing import Any
+
+import pygame
+
+from config import GYRO_COMPLETE_ANGLE, GYRO_START_ANGULAR_VELOCITY
+from modi_io import BaseModiIO, GyroState, create_modi_io
+from ui.widgets import COLORS, draw_text, draw_wrapped_text
+
+
+TRIAL_ORDER = ("button", "gyro", "gyro", "button", "gyro", "button", "button", "gyro")
+PRACTICE_ORDER = ("button", "gyro")
+WAIT_RANGE_MS = (1500, 3000)
+MIN_VALID_RT_MS = 100
+MAX_VALID_RT_MS = 1500
+RESPONSE_TIMEOUT_MS = 3000
+RETURN_ANGLE = 10.0
+
+
+def angular_speed(state: GyroState) -> float:
+    """세 축 각속도의 크기를 반환한다."""
+
+    return math.sqrt(
+        state.angular_velocity_x**2
+        + state.angular_velocity_y**2
+        + state.angular_velocity_z**2
+    )
+
+
+def angle_displacement(state: GyroState, neutral: GyroState) -> float:
+    """시작 자세에서 pitch 또는 roll이 이동한 최대 각도를 반환한다."""
+
+    return max(abs(state.pitch - neutral.pitch), abs(state.roll - neutral.roll))
+
+
+def _wait_for_continue(
+    surface: pygame.Surface,
+    clock: pygame.time.Clock,
+    title: str,
+    detail: str,
+) -> None:
+    while True:
+        events = pygame.event.get()
+        if any(event.type == pygame.QUIT for event in events):
+            raise KeyboardInterrupt
+        if any(
+            event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_SPACE)
+            for event in events
+        ):
+            return
+        surface.fill(COLORS["bg"])
+        draw_text(surface, title, (surface.get_width() // 2, 205), size=35, bold=True, center=True)
+        draw_wrapped_text(
+            surface,
+            detail,
+            pygame.Rect(165, 280, 630, 125),
+            size=22,
+            color=COLORS["muted"],
+        )
+        draw_text(
+            surface,
+            "Enter를 누르면 시작합니다.",
+            (surface.get_width() // 2, 470),
+            size=21,
+            center=True,
+        )
+        pygame.display.flip()
+        clock.tick(60)
+
+
+def _draw_waiting(surface: pygame.Surface, condition: str, label: str) -> None:
+    surface.fill(COLORS["bg"])
+    draw_text(surface, label, (40, 35), size=20, color=COLORS["muted"])
+    instruction = "버튼을 누르세요" if condition == "button" else "손잡이를 한 번 돌리세요"
+    draw_text(surface, "신호를 기다리세요", surface.get_rect().center, size=36, bold=True, center=True)
+    draw_text(
+        surface,
+        f"신호가 나오면 {instruction}",
+        (surface.get_width() // 2, 420),
+        size=22,
+        color=COLORS["muted"],
+        center=True,
+    )
+
+
+def _input_started(io: BaseModiIO, condition: str, events: list[pygame.event.Event]) -> bool:
+    if condition == "button":
+        return io.poll_button(events)
+    return angular_speed(io.get_gyro()) >= GYRO_START_ANGULAR_VELOCITY
+
+
+def _wait_for_gyro_return(
+    surface: pygame.Surface,
+    clock: pygame.time.Clock,
+    io: BaseModiIO,
+    neutral: GyroState,
+) -> None:
+    """다음 시행 전에 손잡이가 기준 자세로 돌아오기를 기다린다."""
+
+    started = time.perf_counter()
+    while angle_displacement(io.get_gyro(), neutral) > RETURN_ANGLE:
+        events = pygame.event.get()
+        if any(event.type == pygame.QUIT for event in events):
+            raise KeyboardInterrupt
+        surface.fill(COLORS["bg"])
+        draw_text(surface, "손잡이를 가운데로 돌려놓으세요", surface.get_rect().center, size=30, center=True)
+        pygame.display.flip()
+        clock.tick(60)
+        if time.perf_counter() - started > 8:
             break
 
-    def run_extra_trials_if_needed(self):
-        for condition in ["button", "gyro"]:
-            while self.count_valid(condition) < 3:
-                trial_index = f"extra_{condition}_{self.count_valid(condition) + 1}"
 
-                print()
-                print(f"{condition} 유효 시행이 3회 미만입니다.")
-                input("추가 시행 준비되면 Enter")
+def _run_trial(
+    surface: pygame.Surface,
+    clock: pygame.time.Clock,
+    io: BaseModiIO,
+    *,
+    condition: str,
+    trial_index: int,
+    total: int,
+    practice: bool,
+    rng: random.Random,
+) -> dict[str, Any]:
+    label = f"연습 {trial_index} / {total}" if practice else f"시행 {trial_index} / {total}"
+    neutral = io.get_gyro()
+    wait_ms = rng.randint(*WAIT_RANGE_MS)
+    wait_started = time.perf_counter()
+    early = False
 
-                retry_count = 0
+    while (time.perf_counter() - wait_started) * 1000 < wait_ms:
+        events = pygame.event.get()
+        if any(event.type == pygame.QUIT for event in events):
+            raise KeyboardInterrupt
+        early = _input_started(io, condition, events) or early
+        _draw_waiting(surface, condition, label)
+        pygame.display.flip()
+        clock.tick(60)
+        if early:
+            break
 
-                if condition == "button":
-                    row = self.run_button_trial(trial_index, retry_count)
-                else:
-                    row = self.run_gyro_trial(trial_index, retry_count)
+    if early:
+        io.turn_off_led()
+        io.stop_tone()
+        return {
+            "trial_index": trial_index,
+            "input_condition": condition,
+            "random_wait_ms": wait_ms,
+            "reaction_time_ms": None,
+            "completion_time_ms": None,
+            "early_response": True,
+            "delayed_response": False,
+            "valid": False,
+            "practice": practice,
+        }
 
-                self.rows.append(row)
-                self.save()
+    io.set_led(100, 100, 100)
+    io.play_tone(880, 65)
+    stimulus_time = time.perf_counter()
+    response_started: float | None = None
+    response_completed: float | None = None
+    response_state = GyroState()
 
-    def print_summary(self):
-        summary = calculate_task1_summary(self.rows)
+    while (time.perf_counter() - stimulus_time) * 1000 < RESPONSE_TIMEOUT_MS:
+        events = pygame.event.get()
+        if any(event.type == pygame.QUIT for event in events):
+            raise KeyboardInterrupt
+        state = io.get_gyro()
+        if condition == "button":
+            if io.poll_button(events):
+                response_started = response_completed = time.perf_counter()
+                break
+        else:
+            if response_started is None and angular_speed(state) >= GYRO_START_ANGULAR_VELOCITY:
+                response_started = time.perf_counter()
+                response_state = state
+            complete_angle = 30.0 if io.is_mock else GYRO_COMPLETE_ANGLE
+            if response_started is not None and angle_displacement(state, neutral) >= complete_angle:
+                response_completed = time.perf_counter()
+                break
 
-        print()
-        print("========== TASK 1 결과 요약 ==========")
-        print(f"버튼 유효 시행 수: {summary['button_valid_count']}")
-        print(f"자이로 유효 시행 수: {summary['gyro_valid_count']}")
+        surface.fill(COLORS["bg"])
+        pygame.draw.circle(surface, pygame.Color("white"), surface.get_rect().center, 90)
+        draw_text(surface, "지금!", (surface.get_width() // 2, 500), size=42, bold=True, center=True)
+        pygame.display.flip()
+        clock.tick(60)
 
-        if summary["button_median"] is not None:
-            print(f"버튼 대표값: {summary['button_median']:.1f} ms")
+    io.turn_off_led()
+    io.stop_tone()
+    timed_out = response_started is None
+    response_started = response_started or time.perf_counter()
+    response_completed = response_completed or response_started
+    reaction_ms = (response_started - stimulus_time) * 1000
+    completion_ms = (response_completed - stimulus_time) * 1000
+    delayed = timed_out or reaction_ms > MAX_VALID_RT_MS
+    valid = MIN_VALID_RT_MS <= reaction_ms <= MAX_VALID_RT_MS and not timed_out
 
-        if summary["gyro_median"] is not None:
-            print(f"자이로 대표값: {summary['gyro_median']:.1f} ms")
+    if condition == "gyro":
+        _wait_for_gyro_return(surface, clock, io, neutral)
 
-        if summary["input_difference"] is not None:
-            print(f"입력 방식 차이: {summary['input_difference']:.1f} ms")
+    return {
+        "trial_index": trial_index,
+        "input_condition": condition,
+        "random_wait_ms": wait_ms,
+        "stimulus_time": round(stimulus_time, 6),
+        "response_start_time": round(response_started, 6),
+        "response_complete_time": round(response_completed, 6),
+        "reaction_time_ms": round(reaction_ms, 1),
+        "completion_time_ms": round(completion_ms, 1),
+        "gyro_pitch": round(response_state.pitch, 3) if condition == "gyro" else None,
+        "gyro_roll": round(response_state.roll, 3) if condition == "gyro" else None,
+        "gyro_angular_velocity": round(angular_speed(response_state), 3) if condition == "gyro" else None,
+        "early_response": False,
+        "delayed_response": delayed,
+        "valid": valid,
+        "practice": practice,
+    }
 
-        print(f"저장 파일: {self.filename}")
 
-    def run(self):
-        print()
-        print("TASK 1 - 반응속도와 입력 방식")
-        print("연습 시행을 시작합니다.")
+def run_task1(participant_id: str = "P001", io: BaseModiIO | None = None) -> dict[str, Any]:
+    """TASK 1 전체 과정을 실행하고 공통 결과 딕셔너리를 반환한다."""
 
-        input("버튼 연습 준비되면 Enter")
-        self.run_button_trial("practice_button", 0)
+    owned_io = io is None
+    io = io or create_modi_io()
+    pygame.init()
+    surface = pygame.display.set_mode((960, 640))
+    pygame.display.set_caption("TASK 1 - 반응속도와 입력 방식")
+    clock = pygame.time.Clock()
+    rng = random.Random(str(participant_id))
+    trials: list[dict[str, Any]] = []
 
-        input("자이로 연습 준비되면 Enter")
-        self.run_gyro_trial("practice_gyro", 0)
+    try:
+        _wait_for_continue(
+            surface,
+            clock,
+            "TASK 1. 반응속도와 입력 방식",
+            "빛과 소리가 나오면 버튼 조건에서는 버튼을 누르고, 자이로 조건에서는 손잡이를 한 번 돌립니다.",
+        )
+        for index, condition in enumerate(PRACTICE_ORDER, start=1):
+            _wait_for_continue(
+                surface,
+                clock,
+                f"{condition.upper()} 연습",
+                "신호보다 먼저 움직이면 조기 반응입니다. 편안한 시작 자세를 유지하세요.",
+            )
+            _run_trial(
+                surface,
+                clock,
+                io,
+                condition=condition,
+                trial_index=index,
+                total=len(PRACTICE_ORDER),
+                practice=True,
+                rng=rng,
+            )
 
-        print()
-        print("본 시행을 시작합니다.")
+        for index, condition in enumerate(TRIAL_ORDER, start=1):
+            while True:
+                _wait_for_continue(
+                    surface,
+                    clock,
+                    f"시행 {index} / {len(TRIAL_ORDER)} · {condition.upper()}",
+                    "가운데 자세를 유지하고 신호를 기다리세요.",
+                )
+                row = _run_trial(
+                    surface,
+                    clock,
+                    io,
+                    condition=condition,
+                    trial_index=index,
+                    total=len(TRIAL_ORDER),
+                    practice=False,
+                    rng=rng,
+                )
+                trials.append(row)
+                if not row["early_response"]:
+                    break
 
-        for trial_index, condition in enumerate(TRIAL_ORDER_TASK1, start=1):
-            self.run_one_trial_with_retry(trial_index, condition)
+        button_times = [row["reaction_time_ms"] for row in trials if row["input_condition"] == "button" and row["valid"]]
+        gyro_times = [row["reaction_time_ms"] for row in trials if row["input_condition"] == "gyro" and row["valid"]]
+        return {
+            "task_id": "task1",
+            "score": None,
+            "metrics": {
+                "device_mode": "mock" if io.is_mock else "real",
+                "button_median_ms": round(median(button_times), 1) if button_times else None,
+                "gyro_median_ms": round(median(gyro_times), 1) if gyro_times else None,
+            },
+            "trials": trials,
+        }
+    finally:
+        io.turn_off_led()
+        io.stop_tone()
+        if owned_io:
+            io.close()
 
-        self.run_extra_trials_if_needed()
-        self.print_summary()
-        self.modi.stimulus_off()
+
+run_task = run_task1
