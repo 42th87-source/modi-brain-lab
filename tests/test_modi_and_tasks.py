@@ -13,6 +13,7 @@ from modi_io import MockModiIO, RealModiIO
 from scoring import score_task3, score_task4
 from tasks.task2_memory import color_from_dial, generate_sequence
 from tasks.task4_coordination import target_position
+from tasks.task1_reaction import angle_displacement, angular_speed
 
 
 class FakeButton:
@@ -106,6 +107,22 @@ class ModiIOTests(unittest.TestCase):
 
 
 class NewTaskScoringTests(unittest.TestCase):
+    def test_task1_gyro_helpers_measure_speed_and_displacement(self) -> None:
+        neutral = type("State", (), {"pitch": 2.0, "roll": -3.0})()
+        state = type(
+            "State",
+            (),
+            {
+                "pitch": 12.0,
+                "roll": 37.0,
+                "angular_velocity_x": 30.0,
+                "angular_velocity_y": 40.0,
+                "angular_velocity_z": 0.0,
+            },
+        )()
+        self.assertEqual(angle_displacement(state, neutral), 40.0)
+        self.assertEqual(angular_speed(state), 50.0)
+
     def test_task2_dial_ranges_select_colors(self) -> None:
         self.assertEqual(color_from_dial(0), "red")
         self.assertEqual(color_from_dial(30), "green")

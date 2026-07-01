@@ -90,7 +90,12 @@ class MockModiIO(BaseModiIO):
             pitch -= 35.0
         if keys[pygame.K_DOWN]:
             pitch += 35.0
-        return GyroState(pitch=pitch, roll=roll)
+        return GyroState(
+            pitch=pitch,
+            roll=roll,
+            angular_velocity_x=roll,
+            angular_velocity_y=pitch,
+        )
 
     def set_led(self, red: int, green: int, blue: int) -> None:
         self.led = (int(red), int(green), int(blue))
